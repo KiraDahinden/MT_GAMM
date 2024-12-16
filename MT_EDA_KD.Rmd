@@ -1,0 +1,356 @@
+---
+title: "EDA_MT"
+author: "Kira Dahinden"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+import
+```{r}
+library(dplyr)
+library(ggplot2)
+library(lattice)
+library(gridExtra)
+library(ggpubr)
+library(mgcv)
+library(tibble)
+library(magrittr)
+```
+
+
+#GRAPHICAL ANALYSIS
+
+## Getting data
+```{r}
+# Lese die RDS-Datei ein
+rawdata <- readRDS("/Users/kira/Desktop/vectomax_ready.RDS")
+```
+
+## Conversions of various data:
+
+- rawdata
+- model_data (wegen welchem modell?gamlss?)
+- model_data.df (gammSlice)
+- model_data_scaled (gammSclice)
+- (dummy??)
+
+
+### model_data
+```{r Create model_data}
+model_data <- rawdata[c("Aa.adults", "weeks.since.treatment", "yday_end", "region", "site", "manhole")]
+model_data <- na.omit(model_data)
+
+```
+
+```{r}
+#compared to rawdata (for weeks since treatment)
+unique(rawdata$weeks.since.treatment) 
+unique(model_data$weeks.since.treatment) # same 
+table(rawdata$weeks.since.treatment)
+table(model_data$weeks.since.treatment)
+```
+```{r}
+#for yday_end
+unique(rawdata$yday_end) 
+unique(model_data$yday_end) # same amount
+table(rawdata$yday_end)
+table(model_data$yday_end)
+```
+
+```{r}
+#for manhole
+unique(rawdata$manhole) 
+table(rawdata$manhole)
+
+```
+
+
+```{r}
+unique(model_data$manhole) # still 20
+table(model_data$manhole)
+```
+
+
+### model_data.df 
+Preparation for gammSlice: make data into df and scale! 
+```{r}
+# gammslice does not support tibbles! Therefore, save as a data frame
+# -> Note: Other models do not require it as a data frame
+model_data.df <- as.data.frame(model_data)
+```
+
+```{r}
+unique(model_data.df$weeks.since.treatment) 
+table(model_data.df$weeks.since.treatment)
+```
+
+#### model_data_scaled:
+```{r}
+# The scale() function in R standardizes numeric variables by transforming them to a scale with a mean of 0 and a standard deviation of 1 (standardization):
+# Standardize weeks.since.treatment and yday_end
+# Create a copy of the original DataFrame
+model_data_scaled <- model_data.df
+
+# Standardize the desired variables and save them in the new copy
+model_data_scaled$weeks.since.treatment <- scale(model_data.df$weeks.since.treatment)
+model_data_scaled$yday_end <- scale(model_data.df$yday_end)
+```
+
+Still 21 values, BUT they are now scaled relative to the standard deviation of the data
+```{r}
+#unique(model_data_scaled$weeks.since.treatment) 
+#table(model_data_scaled$weeks.since.treatment)
+```
+
+
+
+```{r}
+# Check dimensions: reduced from 43 to 6 because we only need 6
+dim(rawdata)
+dim(model_data)
+dim(model_data.df)
+dim(model_data_scaled)
+```
+
+```{r}
+# structure & head
+str(rawdata)
+head(rawdata)
+
+```
+
+```{r}
+str(model_data)
+head(model_data)
+```
+
+```{r}
+str(model_data.df)
+head(model_data.df)
+```
+
+```{r}
+#Important: Factors such as region, site, and manhole were not altered, as they do not need to be scaled
+str(model_data_scaled)
+head(model_data_scaled)
+```
+
+
+```{r}
+# Number of missing values per column
+colSums(is.na(rawdata))
+```
+
+```{r}
+colSums(is.na(model_data))
+```
+
+```{r}
+colSums(is.na(model_data.df))
+```
+
+```{r}
+colSums(is.na(model_data_scaled))
+```
+
+
+```{r}
+# Correlation between varibales before and AFTER scaling = same correlation
+cor_original <- cor(model_data[, sapply(model_data, is.numeric)], use = "complete.obs")
+cor_scaled <- cor(model_data_scaled[, sapply(model_data_scaled, is.numeric)], use = "complete.obs")
+
+# compare correlation matricex
+print(cor_original)
+print(cor_scaled)
+
+```
+## Compare with the original mgcv model
+```{r}
+#For gammslice, scaling is necessary, so compare: (with the original model)
+
+library(mgcv)
+
+# Model with original Data
+mod_mgcv_rawdat <- gam(Aa.adults ~ s(weeks.since.treatment) + s(yday_end), data = rawdata, family = "poisson")
+
+```
+
+```{r}
+# Model with model_data 
+mod_mgcv_modeldat <- gam(Aa.adults ~ s(weeks.since.treatment) + s(yday_end), data = model_data, family = "poisson")
+```
+
+```{r}
+# Model wit hscaled data
+mod_mgcv_scaleddat <- gam(Aa.adults ~ s(weeks.since.treatment) + s(yday_end), data = model_data_scaled, family = "poisson")
+```
+
+```{r}
+summary(mod_mgcv_rawdat)
+```
+
+```{r}
+summary(mod_mgcv_modeldat)
+```
+
+```{r}
+summary(mod_mgcv_scaleddat)
+```
+--> Scaling had no effect on the statistical model fit.
+
+# GRAPHICAL ANALYSIS 
+
+Distribution of the response variables
+We first create a proto-density plot. Note the square-root-scale used for the x-axis.
+```{r}
+library(ggplot2)
+
+gg.dens <- ggplot(data = rawdata) +
+  geom_density() +
+  geom_rug(alpha = 0.1)+
+  scale_x_sqrt()
+```
+
+We first visualise the distribution of the Aedes albopictus (“Aa”).
+```{r}
+gg.dens + aes(x = Aa.adults)
+```
+
+
+Now with model_data_scaled (for safety, but it should be the same since it's not scaled!)
+```{r}
+
+gg.dens <- ggplot(data = model_data_scaled) +
+  geom_density() +
+  geom_rug(alpha = 0.1)+
+  scale_x_sqrt()
+```
+
+We first visualise the distribution of the Aedes albopictus (“Aa”).
+```{r}
+gg.dens + aes(x = Aa.adults)
+```
+
+
+```{r}
+# Check the distribution of the variables before and after the transformation (since they are being transformed!).
+ggplot(model_data, aes(x = weeks.since.treatment)) +
+  geom_histogram(binwidth = 1) +
+  ggtitle("Verteilung von weeks.since.treatment in model_data")
+
+ggplot(model_data_scaled, aes(x = weeks.since.treatment)) +
+  geom_histogram(binwidth = 0.5) +
+  ggtitle("Verteilung von weeks.since.treatment in model_data_scaled")
+
+```
+
+Protoplot Aa (P.7)
+```{r}
+gg.Aa <- ggplot(data = rawdata,
+                 mapping = aes(y = Aa.adults,
+                               x = weeks.since.treatment,
+                              group = manhole)) +
+geom_point(alpha = 0.5) +
+geom_line(alpha = 0.5) +
+scale_y_sqrt()
+
+#plot the adults of the “Aa” counts against time.
+gg.Aa +
+  geom_smooth(group = 1)
+```
+```{r}
+gg.Aa.model <- ggplot(data = model_data,
+                 mapping = aes(y = Aa.adults,
+                               x = weeks.since.treatment,
+                              group = manhole)) +
+geom_point(alpha = 0.5) +
+geom_line(alpha = 0.5) +
+scale_y_sqrt()
+
+gg.Aa.model +
+  geom_smooth(group = 1)
+```
+
+Zoom into sites
+```{r}
+gg.Aa +
+  facet_wrap(~site)
+```
+
+
+model_data
+```{r}
+gg.Aa.model <- ggplot(data = model_data,
+                 mapping = aes(y = Aa.adults,
+                               x = weeks.since.treatment,
+                              group = manhole)) +
+geom_point(alpha = 0.5) +
+geom_line(alpha = 0.5) +
+scale_y_sqrt()
+
+gg.Aa.model +
+  geom_smooth(group = 1)
+```
+Let’s zoom into sites as well.
+```{r}
+gg.Aa.model +
+  facet_wrap(~site)
+```
+
+
+scaled 
+```{r}
+gg.Aa.scaled <- ggplot(data = model_data_scaled,
+                 mapping = aes(y = Aa.adults,
+                               x = weeks.since.treatment,
+                              group = manhole)) +
+geom_point(alpha = 0.5) +
+geom_line(alpha = 0.5) +
+scale_y_sqrt()
+
+gg.Aa.scaled +
+  geom_smooth(group = 1)
+```
+zoom into sites
+```{r}
+gg.Aa.scaled +
+  facet_wrap(~site)
+```
+
+now focus on single manholes:
+```{r}
+library(scales)
+gg.Aa +
+  facet_wrap(~manhole) +
+  rotate_x_text()
+```
+
+```{r}
+gg.Aa.model +
+  facet_wrap(~manhole) +
+  rotate_x_text()
+```
+
+```{r}
+gg.Aa.scaled +
+  facet_wrap(~manhole) +
+  rotate_x_text()
+```
+
+There are important differences among manholes. This may be due to: 1) local conditions or 2) the treatment applied to the each single manhole.
+
+
+
+
+ 
+
+
+
+
+
+
+
